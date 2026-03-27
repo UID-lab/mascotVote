@@ -170,7 +170,7 @@ export default function App() {
               style={logoStyle}
               onError={(e) => (e.currentTarget.style.display = "none")}
             />
-            <div style={heroTitle}>Vote your Mascot</div>
+            <div style={heroTitle}>Vote for Lobby</div>
           </div>
       </div>
       {error ? <div style={{ color: "crimson", marginBottom: 10 }}>{error}</div> : null}
