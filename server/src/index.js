@@ -13,8 +13,10 @@ app.use(express.json());
 const PORT = process.env.PORT || 4000;
 const SPREADSHEET_ID =
   process.env.SPREADSHEET_ID ||
-  "1htUg12zfrRszYrJBbeS71aSAAp16v3X6qsDeeW6A9sw";
+
+  "1JRxqET3e6NQwjdSKEgUULyfPgJj51VAi0vPjLK0Piy0";
 const SHEET_NAME = process.env.SHEET_NAME || null;
+const LOG_SHEET_NAME = process.env.LOG_SHEET_NAME || "VotesLog";
 const SHEETS_DISABLED = process.env.SHEETS_DISABLED === "true";
 
 const defaultMascots = [
@@ -52,6 +54,36 @@ async function getSheetTitle() {
   return title;
 }
 
+async function getSpreadsheetMeta() {
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  return meta.data;
+}
+
+function hasSheet(meta, title) {
+  const list = meta.sheets || [];
+  return list.some((s) => s.properties && s.properties.title === title);
+}
+
+async function ensureLogSheet() {
+  const sheets = await getSheetsClient();
+  const meta = await getSpreadsheetMeta();
+  if (!hasSheet(meta, LOG_SHEET_NAME)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: { title: LOG_SHEET_NAME }
+            }
+          }
+        ]
+      }
+    });
+  }
+}
+
 async function getVotesFromSheets() {
   const sheets = await getSheetsClient();
   const title = await getSheetTitle();
@@ -68,6 +100,18 @@ async function getVotesFromSheets() {
     if (name) votes[name] = count;
   }
   return votes;
+}
+
+async function appendVoteLog(mascotId) {
+  await ensureLogSheet();
+  const sheets = await getSheetsClient();
+  const ts = new Date().toISOString();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${LOG_SHEET_NAME}!A:B`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[ts, mascotId]] }
+  });
 }
 
 async function setVoteInSheets(mascotId) {
@@ -100,8 +144,8 @@ async function setVoteInSheets(mascotId) {
       requestBody: { values: [[newCount]] }
     });
   }
-  const updated = await getVotesFromSheets();
-  return updated;
+  await appendVoteLog(mascotId);
+  return { ok: true };
 }
 
 app.get("/api/votes", async (req, res) => {
@@ -126,12 +170,10 @@ app.post("/api/vote", async (req, res) => {
       const key = normalizeName(mascotId);
       const curr = memStore.get(key) || 0;
       memStore.set(key, curr + 1);
-      const out = {};
-      for (const [k, v] of memStore.entries()) out[k] = v;
-      return res.json(out);
+      return res.json({ ok: true });
     }
-    const updated = await setVoteInSheets(normalizeName(mascotId));
-    return res.json(updated);
+    const result = await setVoteInSheets(normalizeName(mascotId));
+    return res.json(result);
   } catch (e) {
     return res.status(500).json({ error: e && e.message ? e.message : "Failed to cast vote" });
   }
@@ -140,8 +182,23 @@ app.post("/api/vote", async (req, res) => {
 app.get("/api/health", async (req, res) => {
   try {
     const authPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
-    const authConfigured = Boolean(authPath && fs.existsSync(authPath));
-    const sheetTitle = SHEETS_DISABLED ? null : await getSheetTitle();
+    const hasPath = Boolean(authPath);
+    let authConfigured = hasPath && fs.existsSync(authPath);
+    if (!authConfigured) {
+      try {
+        const auth = new google.auth.GoogleAuth({
+          scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+        });
+        await auth.getClient();
+        authConfigured = true;
+      } catch {
+        authConfigured = false;
+      }
+    }
+    let sheetTitle = null;
+    if (!SHEETS_DISABLED && authConfigured) {
+      sheetTitle = await getSheetTitle();
+    }
     return res.json({
       sheetsDisabled: SHEETS_DISABLED,
       spreadsheetId: SPREADSHEET_ID,
@@ -149,7 +206,13 @@ app.get("/api/health", async (req, res) => {
       authConfigured
     });
   } catch (e) {
-    return res.status(500).json({ error: e && e.message ? e.message : "Health check failed" });
+    return res.status(200).json({
+      sheetsDisabled: SHEETS_DISABLED,
+      spreadsheetId: SPREADSHEET_ID,
+      resolvedSheetName: null,
+      authConfigured: false,
+      note: "Credentials not detected. Set GOOGLE_APPLICATION_CREDENTIALS to your service account JSON, or run `gcloud auth application-default login`."
+    });
   }
 });
 

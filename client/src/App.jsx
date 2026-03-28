@@ -7,11 +7,11 @@ import Piggu from "./public/mascots/Piggu.webp";
 import WonderLaLogo from "./public/mascots/wonderLaLogo.png";
 
 const mascots = [
-  { id: "mascot1", name: "Ammu", img: Ammu, candidates: [] },
-  { id: "mascot2", name: "Mottu", img: Mottu, candidates: [] },
-  { id: "mascot3", name: "Horse", img: Horse, candidates: [] },
-  { id: "mascot4", name: "Chikku", img: Chikku, candidates: [] },
-  { id: "mascot5", name: "Piggu", img: Piggu, candidates: [] }
+  { id: "mascot1", name: "Ammu", subtitle: "Fix, Fix, Fixes All!", img: Ammu, candidates: [] },
+  { id: "mascot2", name: "Motu", subtitle: "Think, Think, Idea King!", img: Mottu, candidates: [] },
+  { id: "mascot3", name: "Horsey", subtitle: "Strong, Strong, Super Strong", img: Horse, candidates: [] },
+  { id: "mascot4", name: "Chikku", subtitle: "Explore, Explore, Everywhere!", img: Chikku, candidates: [] },
+  { id: "mascot5", name: "Piggu", subtitle: "Jump, Jump, Non-stop Fun!", img: Piggu, candidates: [] }
 ];
 
 function svgPlaceholder(label) {
@@ -34,25 +34,16 @@ function imgErrorHandler(candidates, label, onFinal) {
 }
 
 export default function App() {
-  const [votes, setVotes] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [missingAssets, setMissingAssets] = useState(false);
+  const [toast, setToast] = useState("");
+  const [cooldown, setCooldown] = useState(false);
 
-  async function fetchVotes() {
-    setError("");
-    try {
-      const res = await fetch("/api/votes");
-      const data = await res.json();
-      setVotes(data);
-    } catch (e) {
-      setError("Failed to load votes");
-    }
+  function showToast(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 2200);
   }
-
-  useEffect(() => {
-    fetchVotes();
-  }, []);
 
   async function vote(id) {
     setError("");
@@ -67,7 +58,9 @@ export default function App() {
       if (!res.ok) {
         setError(data.error || "Vote failed");
       } else {
-        setVotes(data);
+        showToast("Your vote is collected");
+        setCooldown(true);
+        setTimeout(() => setCooldown(false), 2000);
       }
     } catch (e) {
       setError("Vote failed");
@@ -142,7 +135,8 @@ export default function App() {
   };
   const img = { width: "100%", height: 160, objectFit: "cover", display: "block" };
   const body = { padding: 14, display: "flex", flexDirection: "column", gap: 10 };
-  const row = { display: "flex", alignItems: "center", justifyContent: "space-between" };
+  const nameStyle = { fontSize: 18, fontWeight: 800 };
+  const subtitleStyle = { color: "#4b5563", fontSize: 14, lineHeight: 1.2 };
   const btn = {
     padding: "10px 14px",
     borderRadius: 10,
@@ -152,10 +146,17 @@ export default function App() {
     cursor: "pointer",
     transition: "transform 120ms ease, background 120ms ease"
   };
-  const badge = {
-    padding: "4px 8px",
-    borderRadius: 9999,
-    background: "#f3f4f6",
+  const toastStyle = {
+    position: "fixed",
+    top: 14,
+    left: "50%",
+    transform: "translateX(-50%)",
+    background: "#16a34a",
+    color: "white",
+    padding: "10px 14px",
+    borderRadius: 12,
+    boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+    zIndex: 50,
     fontWeight: 600
   };
 
@@ -170,10 +171,11 @@ export default function App() {
               style={logoStyle}
               onError={(e) => (e.currentTarget.style.display = "none")}
             />
-            <div style={heroTitle}>Vote your Mascot</div>
+            <div style={heroTitle}>Vote For Fun</div>
           </div>
       </div>
       {error ? <div style={{ color: "crimson", marginBottom: 10 }}>{error}</div> : null}
+      {toast ? <div style={toastStyle}>{toast}</div> : null}
         {missingAssets ? (
           <div style={{ marginBottom: 12, padding: 12, border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 12, color: "#92400e" }}>
             Mascot images not found. Add files under /client/public/mascots/ with names like elephant.webp/png/jpg, monkey.webp/png/jpg, lion.webp/png/jpg, rabbit.webp/png/jpg, pig.webp/png/jpg. Then refresh.
@@ -200,18 +202,17 @@ export default function App() {
                 onError={imgErrorHandler(m.candidates, m.name, () => setMissingAssets(true))}
             />
             <div style={body}>
-              <div style={row}>
-                <div style={badge}>{votes[m.id] || 0}</div>
-              </div>
+              <div style={nameStyle}>{m.name}</div>
+              <div style={subtitleStyle}>{m.subtitle}</div>
               <button
                 onClick={() => vote(m.id)}
                 style={btn}
-                disabled={loading}
+                disabled={loading || cooldown}
                 onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
                 onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
                 onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
               >
-                {loading ? "Submitting..." : "Vote"}
+                {loading || cooldown ? "Submitting..." : "Vote"}
               </button>
             </div>
           </div>
